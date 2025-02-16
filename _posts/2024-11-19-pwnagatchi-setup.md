@@ -10,8 +10,6 @@ tags:
     - iot
 ---
 
-# Pwnagatchi Setup Guide
-
 ## Introduction
 
 Pwnagatchi is a small, portable device designed for wifi penetration testing. It's perfect as an security enthusiast tool looking to learn about wifi password security and a cheaper alternative to some of the features of devices such as the flipper zero. This guide aims to help people stuck on setting it up like I was due to the transition from official support to community support.
